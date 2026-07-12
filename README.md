@@ -13,56 +13,45 @@ python mcp_server.py
 
 ## Register with OpenCode on Windows
 
-OpenCode su Windows legge la config da `%APPDATA%\opencode\config.json`  
-(es. `C:\Users\MatTeo\AppData\Roaming\opencode\config.json`)
+OpenCode legge la config da:
+```
+C:\Users\<you>\.config\opencode\opencode.jsonc
+```
 
-**Usa `mcp_server.cmd` come comando** — questo risolve sia il problema del `cwd` che quello di `python` non trovato:
+Schema richiesto da OpenCode: `command` è un **array** (non stringa), e `enabled` è **obbligatorio**.
 
-```json
+```jsonc
 {
+  "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "servers": {
-      "team-orchestrator": {
-        "command": "C:\\Users\\MatTeo\\mmm-team-orchestrator\\mcp_server.cmd",
-        "args": [],
-        "env": {
-          "TASKS_DIR": "C:\\Users\\MatTeo\\mmm-team-orchestrator\\tasks"
-        }
+    "team-orchestrator": {
+      "enabled": true,
+      "command": [
+        "cmd",
+        "/c",
+        "D:\\projects\\opencode\\mmm-team-orchestrator\\mcp_server.cmd"
+      ],
+      "env": {
+        "TASKS_DIR": "D:\\projects\\opencode\\mmm-team-orchestrator\\tasks"
       }
     }
   }
 }
 ```
 
-> **Nota**: usa sempre doppio backslash `\\` nei path JSON su Windows.
+> **Note**: `command` is an array where first element is the executable and the rest are arguments.  
+> Use double backslash `\\` in JSON paths on Windows.
 
-## Alternativa: usare Python direttamente con cwd
+## Test manuale da PowerShell
 
-```json
-{
-  "mcp": {
-    "servers": {
-      "team-orchestrator": {
-        "command": "python",
-        "args": ["mcp_server.py"],
-        "cwd": "C:\\Users\\MatTeo\\mmm-team-orchestrator",
-        "env": {
-          "TASKS_DIR": "C:\\Users\\MatTeo\\mmm-team-orchestrator\\tasks"
-        }
-      }
-    }
-  }
-}
+```powershell
+cd D:\projects\opencode\mmm-team-orchestrator
+'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' | python mcp_server.py
 ```
 
-## Test manuale (verifica che funzioni prima di aprire OpenCode)
+Risposta attesa: `{"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05", ...}}`
 
-```cmd
-cd C:\Users\MatTeo\mmm-team-orchestrator
-echo {"jsonrpc":"2.0","id":1,"method":"initialize","params":{}} | python mcp_server.py
-```
-
-Dovresti vedere una risposta JSON con `protocolVersion: "2024-11-05"`.
+Poi in OpenCode digita `/mcp` per verificare che il server sia connesso.
 
 ## Tools
 
