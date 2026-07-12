@@ -7,32 +7,44 @@ from models import Task
 
 logger = logging.getLogger(__name__)
 
-TASKS_DIR = Path(os.environ.get("TASKS_DIR", "./tasks"))
-LOGS_DIR = Path(os.environ.get("LOGS_DIR", "./logs"))
-INDEX_FILE = TASKS_DIR / "index.json"
-LOG_FILE = LOGS_DIR / "activity.log"
+
+def _tasks_dir() -> Path:
+    return Path(os.environ.get("TASKS_DIR", "./tasks"))
+
+
+def _logs_dir() -> Path:
+    return Path(os.environ.get("LOGS_DIR", "./logs"))
+
+
+def _index_file() -> Path:
+    return _tasks_dir() / "index.json"
+
+
+def _log_file() -> Path:
+    return _logs_dir() / "activity.log"
 
 
 def _ensure_dirs():
-    TASKS_DIR.mkdir(parents=True, exist_ok=True)
-    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    _tasks_dir().mkdir(parents=True, exist_ok=True)
+    _logs_dir().mkdir(parents=True, exist_ok=True)
 
 
 def _task_path(task_id: str) -> Path:
-    return TASKS_DIR / f"{task_id}.json"
+    return _tasks_dir() / f"{task_id}.json"
 
 
 def load_index() -> Dict[str, dict]:
     _ensure_dirs()
-    if not INDEX_FILE.exists():
+    idx = _index_file()
+    if not idx.exists():
         return {}
-    with open(INDEX_FILE, "r", encoding="utf-8") as f:
+    with open(idx, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
 def save_index(index: Dict[str, dict]):
     _ensure_dirs()
-    with open(INDEX_FILE, "w", encoding="utf-8") as f:
+    with open(_index_file(), "w", encoding="utf-8") as f:
         json.dump(index, f, indent=2)
 
 
@@ -77,5 +89,5 @@ def _append_log(message: str):
     _ensure_dirs()
     from datetime import datetime, timezone
     ts = datetime.now(timezone.utc).isoformat()
-    with open(LOG_FILE, "a", encoding="utf-8") as f:
+    with open(_log_file(), "a", encoding="utf-8") as f:
         f.write(f"[{ts}] {message}\n")
