@@ -13,32 +13,26 @@ logging.basicConfig(
 logger = logging.getLogger("mcp_server")
 
 import task_manager
+import chat_manager
 
-# ---------------------------------------------------------------------------
-# MCP protocol constants
-# ---------------------------------------------------------------------------
 PROTOCOL_VERSION = "2024-11-05"
-SERVER_INFO = {"name": "mmm-team-orchestrator", "version": "1.0.0"}
+SERVER_INFO = {"name": "mmm-team-orchestrator", "version": "1.1.0"}
 
 TOOLS = [
+    # ------------------------------------------------------------------
+    # Task tools
+    # ------------------------------------------------------------------
     {
         "name": "create_task",
         "description": "Create a new task and assign it to a team.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "title": {"type": "string", "description": "Short task title"},
-                "team": {"type": "string", "description": "Target team ID"},
-                "description": {"type": "string", "description": "Full task details"},
-                "priority": {
-                    "type": "string",
-                    "enum": ["low", "medium", "high"],
-                    "description": "Task priority (default: medium)",
-                },
-                "parent_task_id": {
-                    "type": "string",
-                    "description": "Optional parent task ID for sub-tasks",
-                },
+                "title": {"type": "string"},
+                "team": {"type": "string"},
+                "description": {"type": "string"},
+                "priority": {"type": "string", "enum": ["low", "medium", "high"]},
+                "parent_task_id": {"type": "string"},
             },
             "required": ["title", "team"],
         },
@@ -49,8 +43,8 @@ TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "task_id": {"type": "string", "description": "Task ID to complete"},
-                "outcome": {"type": "string", "description": "What was accomplished"},
+                "task_id": {"type": "string"},
+                "outcome": {"type": "string"},
             },
             "required": ["task_id", "outcome"],
         },
@@ -61,9 +55,9 @@ TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "task_id": {"type": "string", "description": "Task ID"},
-                "comment": {"type": "string", "description": "Reason for escalation"},
-                "new_team": {"type": "string", "description": "Team to escalate to"},
+                "task_id": {"type": "string"},
+                "comment": {"type": "string"},
+                "new_team": {"type": "string"},
             },
             "required": ["task_id", "comment", "new_team"],
         },
@@ -73,9 +67,7 @@ TOOLS = [
         "description": "Read the current state of a task by ID.",
         "inputSchema": {
             "type": "object",
-            "properties": {
-                "task_id": {"type": "string", "description": "Task ID"},
-            },
+            "properties": {"task_id": {"type": "string"}},
             "required": ["task_id"],
         },
     },
@@ -85,22 +77,81 @@ TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "team": {"type": "string", "description": "Filter by team ID"},
-                "status": {
-                    "type": "string",
-                    "enum": ["OPEN", "IN_PROGRESS", "DONE", "ESCALATED"],
-                    "description": "Filter by status",
+                "team": {"type": "string"},
+                "status": {"type": "string", "enum": ["OPEN", "IN_PROGRESS", "DONE", "ESCALATED"]},
+            },
+            "required": [],
+        },
+    },
+    # ------------------------------------------------------------------
+    # Chat tools
+    # ------------------------------------------------------------------
+    {
+        "name": "open_chat",
+        "description": "Open a group chat session between multiple teams.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Chat topic/title"},
+                "teams": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of team IDs participating in the chat",
                 },
+                "description": {"type": "string", "description": "Optional context"},
+                "linked_task_id": {"type": "string", "description": "Optional task ID this chat relates to"},
+            },
+            "required": ["title", "teams"],
+        },
+    },
+    {
+        "name": "post_message",
+        "description": "Post a message to an open group chat on behalf of a team.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "chat_id": {"type": "string"},
+                "author_team": {"type": "string", "description": "Team sending the message"},
+                "text": {"type": "string", "description": "Message content"},
+            },
+            "required": ["chat_id", "author_team", "text"],
+        },
+    },
+    {
+        "name": "close_chat",
+        "description": "Close a group chat session with an optional summary.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "chat_id": {"type": "string"},
+                "summary": {"type": "string", "description": "Optional outcome summary of the chat"},
+            },
+            "required": ["chat_id"],
+        },
+    },
+    {
+        "name": "get_chat",
+        "description": "Read the full state of a chat including all messages.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"chat_id": {"type": "string"}},
+            "required": ["chat_id"],
+        },
+    },
+    {
+        "name": "list_chats",
+        "description": "List chats, optionally filtered by team and/or status.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "team": {"type": "string"},
+                "status": {"type": "string", "enum": ["OPEN", "CLOSED"]},
             },
             "required": [],
         },
     },
 ]
 
-
-# ---------------------------------------------------------------------------
-# JSON-RPC helpers
-# ---------------------------------------------------------------------------
 
 def _ok(req_id, result):
     return {"jsonrpc": "2.0", "id": req_id, "result": result}
@@ -113,10 +164,6 @@ def _err(req_id, code, message):
 def _text(content) -> dict:
     return {"type": "text", "text": json.dumps(content, indent=2)}
 
-
-# ---------------------------------------------------------------------------
-# Request handlers
-# ---------------------------------------------------------------------------
 
 def handle_initialize(req_id, params):
     return _ok(req_id, {
@@ -136,36 +183,41 @@ def handle_tools_call(req_id, params):
     try:
         if name == "create_task":
             result = task_manager.create_task(
-                title=args["title"],
-                team=args["team"],
+                title=args["title"], team=args["team"],
                 description=args.get("description", ""),
                 priority=args.get("priority", "medium"),
                 parent_task_id=args.get("parent_task_id"),
             )
         elif name == "complete_task":
-            result = task_manager.complete_task(
-                task_id=args["task_id"],
-                outcome=args["outcome"],
-            )
+            result = task_manager.complete_task(task_id=args["task_id"], outcome=args["outcome"])
         elif name == "comment_and_escalate":
             result = task_manager.comment_and_escalate(
-                task_id=args["task_id"],
-                comment=args["comment"],
-                new_team=args["new_team"],
+                task_id=args["task_id"], comment=args["comment"], new_team=args["new_team"]
             )
         elif name == "get_task":
             result = task_manager.get_task(task_id=args["task_id"])
         elif name == "list_tasks":
-            result = task_manager.list_tasks(
-                team=args.get("team"),
-                status=args.get("status"),
+            result = task_manager.list_tasks(team=args.get("team"), status=args.get("status"))
+        elif name == "open_chat":
+            result = chat_manager.open_chat(
+                title=args["title"], teams=args["teams"],
+                description=args.get("description", ""),
+                linked_task_id=args.get("linked_task_id"),
             )
+        elif name == "post_message":
+            result = chat_manager.post_message(
+                chat_id=args["chat_id"], author_team=args["author_team"], text=args["text"]
+            )
+        elif name == "close_chat":
+            result = chat_manager.close_chat(chat_id=args["chat_id"], summary=args.get("summary", ""))
+        elif name == "get_chat":
+            result = chat_manager.get_chat(chat_id=args["chat_id"])
+        elif name == "list_chats":
+            result = chat_manager.list_chats(team=args.get("team"), status=args.get("status"))
         else:
             return _err(req_id, -32601, f"Unknown tool: {name}")
         return _ok(req_id, {"content": [_text(result)]})
-    except KeyError as e:
-        return _ok(req_id, {"content": [_text({"error": str(e)})], "isError": True})
-    except ValueError as e:
+    except (KeyError, ValueError) as e:
         return _ok(req_id, {"content": [_text({"error": str(e)})], "isError": True})
     except Exception as e:
         logger.exception("Unhandled error in tool %s", name)
@@ -179,12 +231,8 @@ DISPATCH = {
 }
 
 
-# ---------------------------------------------------------------------------
-# stdio loop
-# ---------------------------------------------------------------------------
-
 def main():
-    logger.info("MMM Team Orchestrator MCP server starting (stdio)")
+    logger.info("MMM Team Orchestrator MCP server v1.1.0 starting (stdio)")
     for raw_line in sys.stdin:
         raw_line = raw_line.strip()
         if not raw_line:
@@ -192,22 +240,16 @@ def main():
         try:
             req = json.loads(raw_line)
         except json.JSONDecodeError as e:
-            resp = _err(None, -32700, f"Parse error: {e}")
-            print(json.dumps(resp), flush=True)
+            print(json.dumps(_err(None, -32700, f"Parse error: {e}")), flush=True)
             continue
-
         req_id = req.get("id")
         method = req.get("method", "")
         params = req.get("params", {})
-
         handler = DISPATCH.get(method)
         if handler is None:
-            # notifications (no id) are silently ignored
             if req_id is not None:
-                resp = _err(req_id, -32601, f"Method not found: {method}")
-                print(json.dumps(resp), flush=True)
+                print(json.dumps(_err(req_id, -32601, f"Method not found: {method}")), flush=True)
             continue
-
         resp = handler(req_id, params)
         if req_id is not None:
             print(json.dumps(resp), flush=True)
