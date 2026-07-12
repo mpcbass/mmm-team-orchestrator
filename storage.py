@@ -7,13 +7,18 @@ from models import Task
 
 logger = logging.getLogger(__name__)
 
+# Base dir = directory where this file lives (always correct regardless of cwd)
+_BASE = Path(__file__).resolve().parent
+
 
 def _tasks_dir() -> Path:
-    return Path(os.environ.get("TASKS_DIR", "./tasks"))
+    v = os.environ.get("TASKS_DIR", "").strip()
+    return Path(v) if v else _BASE / "tasks"
 
 
 def _logs_dir() -> Path:
-    return Path(os.environ.get("LOGS_DIR", "./logs"))
+    v = os.environ.get("LOGS_DIR", "").strip()
+    return Path(v) if v else _BASE / "logs"
 
 
 def _index_file() -> Path:
